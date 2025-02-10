@@ -1,0 +1,307 @@
+---
+title: "BUDA 530 Assignment 2"
+author: "Collin Edwards"
+date: "`r Sys.Date()`"
+output:
+  pdf_document: default
+  word_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+
+```
+
+You are a data scientist working for a consulting firm specializing in safety and public health. Your current projects involve analyzing data from the Titanic passenger manifest and the Framingham Heart Study. Your boss has assigned you to respond to specific client questions and prepare deliverables for upcoming meetings.
+
+### Data
+The `titanic` dataset is from the `datasets` library. This dataset contains information on the passengers of the Titanic. Use `help("Titanic")` for more information.
+
+The `framingham` dataset come from Kaggle (.CSV included on eCampus). You can find more information on it at [Logistic regression To predict heart disease](https://www.kaggle.com/datasets/dileep070/heart-disease-prediction-using-logistic-regression). It is from an ongoing cardiovascular study on residents of the town of Framingham, Massachusetts. The classification goal is to predict whether the patient has 10-year risk of future coronary heart disease (CHD).The dataset provides the patients’ information. It includes over 4,000 records and 15 attributes.
+
+### Scenarios and Tasks:
+
+#### Scenario 1: Titanic Data Analysis
+**Client Email Request**:
+A cruise company executive has sent the following email:  
+"Dear Analyst,  
+We are in the process of designing a new luxury cruise liner. To enhance passenger safety, we would like to understand the factors that influenced survival during the Titanic disaster. Specifically, we are curious about how age, gender, and ticket class affected survival rates. Could you provide a summary of insights and any recommendations?  
+
+Best regards,  
+Executive Team"
+
+**Your Task**:
+1. Analyze the Titanic dataset to identify how survival rates varied by age, gender, and ticket class.
+  - Use a binomial logistic regression model to predict the survival of a passenger using all the other variables as predictors.
+  
+**1.0 Analyzing the dataset**
+```{r}
+data("Titanic")
+str(Titanic) # to look at the structure of the data
+# Converting Titanic table to a Data Frame
+titanic_df <- as.data.frame(Titanic)
+# using View() to open it in a spreadsheet-like view. It's a contingency table so it's not a standard data frame and its summarized data by grouping out the variables. Normally used for binary logistics regression. Scientists and engineers will often use this since there is minimal data loss
+# View(your_dataframe)  # Commented out since View() doesn't work in RMarkdown
+head(titanic_df)  # Use this instead for previewing data
+
+summary(titanic_df)
+```
+**1.1 Binomial logistic regression model**
+```{r}
+# Binomial logistic regression model
+# fitting the logistic regression model
+titanic_mod1 <- glm(Survived ~ Class + Sex + Age, #using the glm instead of the regular lm function since it's a generalized linear model and doesnt have a normal distribution
+                     data = titanic_df, 
+                     weights = Freq, 
+                     family = binomial)
+
+# Display the model summary
+summary(titanic_mod1)
+```
+We now fit a binomial logistic regression model. In this model, the response variable is Survived and the predictors are Class, Sex, and Age. Because the data is aggregated, we include the Freq column as weights. The model is specified using the glm() function with the binomial family.
+
+
+**1.2 Stepwise model selection**
+I will now use the step() function (with both forward and backward selection) to identify a more parsimonious model based on AIC. We don't want a very complex model so the AIC will penalize models by giving them a higher score. We only use AIC when we're looking at sub models of the same family. This process will consider potential interactions and may exclude variables that do not contribute significantly—even if there are reasons to keep them for subject‐matter purposes.
+```{r}
+# Stepwise model selection
+titanic_mod2 <- step(titanic_mod1, direction = "both", trace = TRUE)
+# Display the final model summary
+summary(titanic_mod2)
+```
+**1.3 Visualizations**
+```{r}
+# Load the effects package
+library(effects)
+# Plot the effects of the predictors in the final model
+plot(allEffects(titanic_mod2), 
+     main = "Predictors on Survival", 
+     xlab = "Predictor Variables", 
+     ylab = "Survival Probability",
+     fig.height = 6, 
+     fig.width = 8)
+```
+
+**1.3.5 Alternative visualization**
+```{r}
+library(ggplot2)
+ggplot(titanic_df, aes(x = Class, y = Freq, fill = Survived)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  facet_wrap(~Sex) +
+  labs(title = "Passenger Survival Counts by Class and Sex",
+       x = "Ticket Class",
+       y = "Count") +
+  theme_minimal()
+
+```
+
+#### Report Email
+**Subject:** Insights on Passenger Survival Factors – Titanic Analysis
+
+Dear Executive Team,
+
+Thank you for reaching out regarding passenger safety insights based on the Titanic disaster. Our analysis of the dataset revealed key factors influencing survival rates:
+**Gender:** Female passengers had significantly higher survival odds compared to males.
+**Ticket Class:** Passengers in first class had the highest survival rates, followed by second and third class, with third-class passengers facing the lowest odds of survival.
+**Age:** Children had better survival chances than adults, though the effect was less pronounced than gender and class.
+**Recommendations for Enhancing Passenger Safety:**
+Prioritized Emergency Protocols: Implement clear, structured emergency procedures ensuring equitable access to lifeboats across all passenger classes.
+Training & Drills: Regular crew training and passenger safety drills can improve response times during emergencies.
+Enhanced Safety Infrastructure: Consider improved life-saving equipment allocation and strategically placed emergency exits to ensure accessibility for all passengers, particularly those in economy-class accommodations.
+These insights can help inform safety measures for your new cruise liner, ensuring improved preparedness and survival outcomes in emergency situations.
+
+Best regards,
+
+Collin Edwards
+
+
+## Scenario 2: Framingham Heart Study
+**Town Hall Prep**:
+Your boss is preparing for a town hall meeting with public health officials. She has asked you to prepare an answer to the following question:  
+"What are the most critical demographic and lifestyle factors contributing to cardiovascular disease risk in our region? Are there specific interventions we should focus on?"
+
+**Your Task**:
+1. Analyze the Framingham dataset to identify key risk factors (e.g., age, cholesterol levels, smoking habits).
+  - Complete an analysis of this data using a binary logistic regression model to predict the 10 year risk of coronary heart disease using all the other variables as predictors.
+  - Use the `step` function to select the best model.
+  - Note: you will need to deal with "NAs".
+  - Note: you may need to consider the interactions between certain predictor variables (`currentSmoker` and `cigsPerDay`).
+  - Consider whether some variables should be excluded for reasons other than model fit.
+2. Create clear visualizations to illustrate your findings.
+  - Use the `effects` package to plot the effects of the predictors in the final model.
+  - Remember to adjust the `fig.height` and `fig.width` chunk options so that the plots look nice).
+3. Prepare a detailed written response, including:
+   - A summary of the most significant risk factors.
+   - Recommendations for targeted interventions, with specific examples based on your analysis.
+
+**2.1 Preparing and analyzing the dataset**
+
+```{r}
+# Load the Framingham dataset
+framingham <- read.csv("~/Downloads/framingham.csv")
+# Check the structure of the dataset
+str(framingham)
+# Check for missing values
+sum(is.na(framingham))
+# Remove rows with missing values
+framingham <- na.omit(framingham)
+summary(framingham)
+```
+**2.1.1 Exploring the dataset**
+```{r}
+# plotting the distribution of age and total cholesterol
+ggplot(framingham, aes(x = age)) +
+  geom_histogram(binwidth = 5, fill = "skyblue", color = "black") +
+  labs(title = "Distribution of Age", x = "Age", y = "Count")
+
+ggplot(framingham, aes(x = totChol)) +
+  geom_histogram(binwidth = 20, fill = "salmon", color = "black") +
+  labs(title = "Distribution of Total Cholesterol", x = "Total Cholesterol", y = "Count")
+
+```
+
+**2.1.2 Binomial logistic regression model**
+```{r}
+# Binary logistic regression model
+# Fitting the logistic regression model
+framingham_mod <- glm(TenYearCHD ~ . + currentSmoker:cigsPerDay, 
+                  data = framingham, 
+                  family = binomial)
+
+# Summarize the full model
+summary(framingham_mod)
+```
+We now fit a full logistic regression model where the response variable is `TenYearCHD` and all other variables are used as predictors. In addition, we explicitly include an interaction term between `currentSmoker` and `cigsPerDay` to capture the combined effect of smoking status and smoking intensity.
+
+**2.1.3 Stepwise model selection**
+```{r}
+# Stepwise model selection
+framingham_mod_step <- step(framingham_mod, direction = "both", trace = TRUE)
+# Summarize the final model
+summary(framingham_mod_step)
+```
+
+**2.1.4 Visualizations**
+```{r}
+# Generate and plot the effects for the final model
+# Generate all effects
+effects_list <- allEffects(framingham_mod_step)
+
+# Plot each effect separately
+plot(effects_list[["age"]], main = "Effect of Age on 10-Year CHD Risk")
+plot(effects_list[["cigsPerDay"]], main = "Effect of Cigarettes Per Day")
+plot(effects_list[["totChol"]], main = "Effect of Total Cholesterol")
+plot(effects_list[["sysBP"]], main = "Effect of Systolic Blood Pressure")
+plot(effects_list[["glucose"]], main = "Effect of Glucose")
+
+```
+
+
+**2.3 Report**
+
+# Detailed Findings and Recommendations
+
+## Key Risk Factors for 10-Year CHD Risk
+
+Based on our analysis and the final logistic regression model, the most significant risk factors contributing to the 10-year risk of coronary heart disease (CHD) include:
+
+### **Age**
+- Older age is strongly associated with an increased CHD risk.
+
+### **Cholesterol Levels (totChol)**
+- Higher cholesterol levels contribute significantly to CHD risk, suggesting that **lipid management** is essential.
+
+### **Blood Pressure (sysBP and/or diaBP)**
+- Elevated blood pressure levels are associated with increased risk, highlighting the importance of **blood pressure control**.
+
+### **Smoking Behavior**
+- The interaction between **currentSmoker** and **cigsPerDay** is significant.  
+  - Being a **current smoker** increases CHD risk.  
+  - The number of **cigarettes smoked per day** further amplifies this risk.  
+  - This underscores the **need for robust smoking cessation programs**.
+
+### **Other Factors**
+- Depending on the stepwise model output, additional variables such as **diabetes status, BMI, or medication use** may also influence CHD risk.  
+- However, the factors listed above appear to be the most significant based on our model selection criteria.
+
+---
+
+# **Recommendations for Targeted Interventions**
+
+## **1. Age-Related Interventions**
+- Implement **routine cardiovascular screening programs** for older adults.
+- Promote **healthy aging initiatives**, including **physical activity and diet modifications**.
+
+## **2. Cholesterol Management**
+- Increase **community awareness** about cholesterol control.
+- Encourage **regular lipid profile testing**.
+- Support programs that **facilitate access to cholesterol-lowering medications** and lifestyle interventions.
+
+## **3. Hypertension Control**
+- Organize **community blood pressure screening events**.
+- Educate the public on the importance of **lifestyle changes** (e.g., **reduced salt intake, exercise**) for managing blood pressure.
+- Enhance **access to antihypertensive treatment**.
+
+## **4. Smoking Cessation Programs**
+- Develop **targeted smoking cessation campaigns**, particularly emphasizing the **compounded risk** associated with heavy smoking.
+- Provide resources such as **counseling, nicotine replacement therapy, and support groups**.
+- Consider interventions in **high-risk communities** identified by the model.
+
+## **5. Integrated Public Health Strategies**
+- Utilize these insights to **inform policy decisions** and allocate resources effectively.
+- Foster **collaborations between healthcare providers, local governments, and community organizations** to design interventions that address **multiple risk factors simultaneously**.
+
+---
+
+# **Conclusion**
+Our analysis of the **Framingham Heart Study** dataset using **binary logistic regression** and **stepwise model selection** has identified key **demographic and lifestyle factors**—especially **age, cholesterol levels, blood pressure, and smoking behavior**—as **critical drivers of 10-year CHD risk**.
+
+The interaction between **smoking status** and **the number of cigarettes smoked per day** further emphasizes the **need for targeted smoking cessation efforts**. These findings provide **actionable insights** for public health officials and support the development of **targeted interventions** to reduce the burden of cardiovascular disease in our region.
+
+By implementing these **evidence-based strategies**, we can improve **heart health outcomes** and reduce **long-term healthcare costs** for at-risk populations.
+
+
+#### Scenario 3: Internal Briefing
+**Manager's Request**:
+Your manager was very impressed with your work on the last two assignments and has asked you to present a briefing at the next team meeting. The focus is on improving team efficiency in data analysis. She asks:  
+"Can you provide an example of how visualization or exploratory data analysis (EDA) has helped uncover hidden trends in our datasets? Use either the Titanic or Framingham data to demonstrate this."
+
+**Your Task**:
+1. Select one dataset (Titanic or Framingham) and use your exploratory data analysis from the previous task.
+2. Create a visualization that highlights a key trend or insight.
+3. Write a short summary explaining how EDA was used to uncover this insight.
+
+**3.1 EDA and Visualization**
+```{r}
+# EDA and Visualization for Titanic Dataset
+library(ggplot2)
+
+# creating a bar plot to display survival counts by ticket class, with facets for gender
+ggplot(titanic_df, aes(x = Class, y = Freq, fill = Survived)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  facet_wrap(~ Sex) +
+  labs(title = "Survival Counts by Ticket Class and Gender",
+       x = "Ticket Class",
+       y = "Number of Passengers") +
+  theme_minimal()
+
+```
+
+**3.2 Summary of Findings**
+
+In this visualization, the data are grouped by ticket class and separated by gender:
+
+### Gender Impact
+The plot reveals a striking difference in survival counts between male and female passengers.  
+- Female passengers show considerably higher survival counts compared to their male counterparts across all classes.
+
+### Ticket Class Impact
+Within each gender, survival outcomes also vary by ticket class.  
+- For **females**, survival counts are especially high in **first and second classes**.  
+- **Male passengers** in **third class** have the lowest survival counts.
+
+### Key Takeaway
+This example of Exploratory Data Analysis (EDA) allowed our team to quickly identify that the **intersection of gender and ticket class plays a crucial role in survival outcomes**. Recognizing this pattern early on helped us to focus our subsequent modeling efforts on these key predictors, thereby improving our overall data analysis efficiency.
+
+By leveraging such **visualizations**, we can **effectively communicate complex trends** to the team and stakeholders, ensuring that our analysis is both **data-driven and actionable**.
+
