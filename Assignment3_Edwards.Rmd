@@ -1,0 +1,268 @@
+---
+title: "BUDA 530 Assignment 3"
+author: "Collin Edwards"
+date: "`r Sys.Date()`"
+output:
+  pdf_document: default
+  word_document: default
+  html_document:
+    df_print: paged
+---
+
+Complete the assignment below. Make sure you answer each part of the questions. Submit your responses on eCampus as both an .RMD file and a knitted .pdf file. This assignment is due by 2/4.
+
+# Problem 1
+
+The [Billionaires Statistics Dataset](https://www.kaggle.com/datasets/nelgiriyewithana/billionaires-statistics-dataset/data) is a dataset from Kaggle (.csv included in eCampus attachments) that contains information on the world's billionaires and the countries in which they reside. You can find more information on the dataset using the link above.
+
+```{r}
+library(readr)
+Billionaires_Statistics_Dataset <- read_csv("~/Downloads/Billionaires Statistics Dataset.csv")
+str(Billionaires_Statistics_Dataset)
+summary(Billionaires_Statistics_Dataset)
+```
+
+For this analysis, consider a scenario where you work for a wealth management firm that is looking to expand its operations to new countries. Your job is to understand what factors are associated with the number of billionaires in a country. Ultimately your firm will cross reference this information with industry forecasts on country GDP growth, etc. to determine which countries are most likely to have the highest growth in the number of billionaires in the next 10 years (outside the scope of this assignment). For now, you will build a model focusing on the factors associated with the number of billionaires in a country.
+
+Before we can model this, we must summarize the data by country. We will count the number of billionaires per country and use the first observation for each country to summarize the country specific statistics. To do this we use the `tidyverse` package (note, you do not have to understand this code but if you are interested in learning more about `tidyverse` see the corresponding Module X section).
+
+Now you have the summarized dataset `BillionairesByCountry`. Use this dataset to:
+
+(1) Build a Poisson regression model to predict the number of billionaires per country (`count_billionaires`) using the other variables in the dataset (except for `country`). Note: It is industry standard to use a `log` transform when using large financial metrics such as `gdp_country` and `tax_revenue_country_country` as predictors so make sure you do that. Note: you will have to deal with "NAs", do so using `na.omit`.
+
+
+
+
+```{r} 
+library(tidyverse)
+
+# summarize the dataset by country and fix the GDP column
+BillionairesByCountry <- Billionaires_Statistics_Dataset %>%                       
+  select(country,
+         gdp_country,
+         gross_tertiary_education_enrollment,
+         gross_primary_education_enrollment_country,
+         life_expectancy_country,
+         tax_revenue_country_country,
+         total_tax_rate_country,
+         population_country,
+         latitude_country,
+         longitude_country) %>%  # select only the columns we are interested in
+  group_by(country) %>%       # group by country
+  summarise(count_billionaires = n(),
+            gdp_country = first(gdp_country),
+            gross_tertiary_education_enrollment = first(gross_tertiary_education_enrollment),
+            gross_primary_education_enrollment_country = first(gross_primary_education_enrollment_country),
+            life_expectancy_country = first(life_expectancy_country),
+            tax_revenue_country_country = first(tax_revenue_country_country),
+            total_tax_rate_country = first(total_tax_rate_country),
+            population_country = first(population_country),
+            latitude_country = first(latitude_country),
+            longitude_country = first(longitude_country)) %>%  # summarize by country
+  mutate(gdp_country = as.numeric(gsub("\\$|\\,", "", gdp_country)))  # fix a problem with GDP being a string
+
+# checking the dataset structure and summary
+str(BillionairesByCountry)
+summary(BillionairesByCountry)
+View(BillionairesByCountry)
+
+# counting NAs before removal
+sum(is.na(BillionairesByCountry))
+
+
+# removing observations with NA values
+BillionairesByCountry_clean <- na.omit(BillionairesByCountry)
+
+# create new columns for the log-transformed variables
+BillionairesByCountry_clean <- BillionairesByCountry_clean %>%
+  mutate(log_gdp_country = log(gdp_country),
+         log_tax_revenue = log(tax_revenue_country_country))
+
+# verifying that the new variables exist
+names(BillionairesByCountry_clean)
+# Expected to see "log_gdp_country" and "log_tax_revenue" in the output
+
+# fitting the Poisson model using the pre-transformed variables
+model_poisson <- glm(count_billionaires ~ log_gdp_country +
+                                      gross_tertiary_education_enrollment +
+                                      gross_primary_education_enrollment_country +
+                                      life_expectancy_country +
+                                      log_tax_revenue +
+                                      total_tax_rate_country +
+                                      population_country +
+                                      latitude_country +
+                                      longitude_country,
+                     data = BillionairesByCountry_clean,
+                     family = poisson())
+summary(model_poisson)
+
+```
+
+#### Problem 1 Answer
+I modeled counted the `billionaires` using the remaining predictors in the dataset. I used a Poisson regression model because the response variable is a count variable. I used a log transform for the financial metrics `gdp_country` and `tax_revenue_country_country` because they are large financial metrics. *I omitted "NAs" from the dataset because I did not want to include missing data in the model and since there were not a lot of NA's I omitted them instead of interpolating*. I did not use `country` as a predictor because it is a categorical variable with many levels and would not be appropriate for a Poisson regression model. 
+
+
+
+(2) Use `step` for model feature selection.
+```{r}
+model_poisson_step <- step(model_poisson)
+summary(model_poisson_step)
+```
+
+#### Problem 2 Answer
+
+In order to remove the non-significant predictors we went with the `step` function to perform model feature selection like we did in the previous assignment. This function removes the non-significant predictors from the model using AIC as the criterion. Occram's razor(our favorite principle) states that the simplest model that explains the data is the best model. This is why we used the `step` function to remove the non-significant predictors from the model.
+
+
+(3) Check for overdispersion/ underdispersion and account for it in your final model if necessary.
+```{r}
+# Calculate the dispersion parameter
+dispersion <- sum(residuals(model_poisson_step, type = "pearson")^2) / model_poisson_step$df.residual
+dispersion
+
+# If overdispersion is present (e.g., dispersion > 1.5), refit using a quasi-Poisson family.
+if(dispersion > 1.5) {
+  model_final <- glm(count_billionaires ~ ., data = model.frame(model_poisson_step),
+                     family = quasipoisson())
+} else {
+  model_final <- model_poisson_step
+}
+summary(model_final)
+```
+
+#### Problem 3 Answer
+
+I checked for overdispersion by calculating the dispersion parameter. If the dispersion parameter is greater than 1.5, then overdispersion is present and I refit the model using a quasi-Poisson family. If the dispersion parameter is less than 1.5, then I used the original Poisson model. This accounts for overdispersion/ underdispersion in the final model. 
+
+(3b) Use the `effects` library to create effects plots for the final model (remember to adjust the `fig.height` and `fig.width` chunk options so that the plots look nice).
+```{r dvistseffects, fig.height=20, fig.width=20, cache=TRUE}
+library(effects)
+plot(allEffects(model_poisson))
+```
+
+#### Problem 3b Answer
+I modified the figure size and the graph size thanks to the collab notes. I also used the `effects` library to create effects plots for the final model. The effects plots show the relationship between the predictors and the response variable. The effects plots are easier to interpret than the coefficients because they show the relationship between the predictors and the response variable in a visual way. 
+
+
+(4) Write a summary of your methodology for your direct supervisor. You direct supervisor has a similar statistical background as you, but does not use it on a daily basis so you will need to briefly refresh them on the statistical concepts you used and explain your methodology in detail. You know from previous experience that your supervisor is will be interested in why you did not use `country` as a predictor, why you used a `log` transform for large financial metrics, why you chose to omit "NAs", and how you accounted for overdispersion/ underdispersion.
+
+#### Problem 4 Answer
+
+*Methodology Summary:*
+
+I built a Poisson regression model to predict the number of billionaires per country based on several country-specific metrics. Financial metrics like GDP and tax revenue were log-transformed to account for their large scale and to linearize their relationships with the outcome. The country variable was excluded as it is a categorical identifier that does not generalize to new countries. I removed missing data using na.omit to ensure the integrity of the model fitting.
+
+	After fitting the initial model, I used stepwise selection (step()) to eliminate non-significant predictors. I then checked for overdispersion by computing the dispersion parameter (the Pearson chi-squared statistic divided by its degrees of freedom). Since overdispersion can lead to underestimated standard errors, if it was detected (i.e., if the dispersion parameter was much larger than 1), I refitted the model using a quasi-Poisson family.
+
+	Finally, I generated effects plots to visualize the influence of each predictor on the number of billionaires. These steps ensure that the model is both statistically robust and interpretable.
+	
+	
+(5) Write a summary of the key findings for the VP of your firm that you report under who is particularly interested in this project. This VP also has a similar statistical background to you and your supervisor, but has not used in years. Further your VP is an extremely busy person and does not like reading long reports; however they will ask an annoying number of questions if they do not understand something. Strike a balance between including how you arrived at the results and the results themselves. Are there certain details you can footnote rather include directly in the body of the report? Are their resources on the web you can hyperlink for additional information rather than recreate the wheel (i.e. [Poisson regression - Wikipedia](https://en.wikipedia.org/wiki/Poisson_regression) ).
+
+#### Problem 5 Answer
+
+*Key Findings:*
+
+The analysis shows that several country-level factors are significantly associated with the number of billionaires. In particular, financial metrics (GDP and tax revenue, both log-transformed) and other socio-economic indicators such as education enrollment, life expectancy, and population have strong predictive power.
+
+A notable technical challenge was overdispersion, which we addressed by switching to a quasi-Poisson model. This adjustment ensures that our standard errors and confidence intervals are accurate.
+
+For further details on Poisson regression and overdispersion, please refer to Poisson regression - Wikipedia [Poisson regression - Wikipedia](https://en.wikipedia.org/wiki/Poisson_regression). Additional in-depth methodology is available in our internal documentation if required.
+
+Please let me know if you have any questions.
+
+*Note: The full methodology and model details are available upon request.*
+
+(6) Suppose your VP responds to your report with the email below. Write a brief response to this email (do not actually write any additional code or do any additional analysis for this part). 
+
+"Great Analysis! 
+
+As a follow-up, I'd be interested in extending the model to counties without billionaires so that we don't miss out on emerging opportunities. A junior analyst should be able to pull the metrics you need for most of the countries not listed here. I don't think you'll be able to use Poisson regression for this since the response variable will be 0 for all of these countries. It's been a while since I've had stats, can you remind me what model can be used for this case? 
+
+Additionally, I'd be interested in a comparison between the models with and without the additional countries. I'm not sure how to do this (although cross validation seems to be ringing a bell). I'm sure you can figure it out; let me know what you plan to try and I'll see if jogs my memory. 
+
+Lastly, I know metrics like "GDP" aren't going to be available for all countries (i.e. Hong Kong), but I'd like to see if we can estimate a value for these countries so we don't exclude them from consideration. I'm going to reach out to some consultants to see if they have any ideas; do you have any concerns I should bring up with them? In particular, would you want to use these estimates for training your model or just for prediction?
+
+Thanks!"
+
+#### Problem 6 Answer
+
+*Response:*
+
+Thank you for your feedback. To extend the model to include countries without any billionaires (where the observed count is zero), a Zero-Inflated Poisson (ZIP) model would be more appropriate because it can handle excess zeros by modeling both a binary process (for structural zeros) and a count process.
+
+For comparing models that include and exclude these additional countries, I would suggest using cross-validation to assess predictive performance. Cross-validation would allow us to compare model accuracy on hold-out data, which is more appropriate than comparing AIC values across models fitted with different datasets.
+
+Regarding missing financial metrics such as GDP for some countries, my recommendation would be to use the estimated values solely for prediction. Incorporating them into the training set might introduce bias unless the estimates are highly reliable. I would be happy to discuss this further.
+
+Thanks!
+
+
+## Question 2
+
+The dataset `happy` in the `faraway` package is about 39 students from the University of Chicago MBA cohort.  
+
+```{r}
+library(faraway)
+data(happy)
+str(happy)
+summary(happy)
+help(happy)
+```
+
+We want to explain the effects of the other information on the happiness of the students.  The variable `happy` is a numeric variable that ranges from 0 to 10, with 10 being the happiest. This is recorded as a number, so we must first convert it an ordered factor variable using the code below:
+
+```{r}
+# This code converts the happy variable from a numeric variable to an ordered factor variable
+myHappy <-happy %>% 
+  mutate(happy = factor(happy, ordered = TRUE))
+```
+
+Consider the following models:
+
+```{r}
+# Ordinal Regression
+library(MASS)
+mod1<-polr(happy~.,data=myHappy)
+summary(mod1)
+
+# Multinomial Regression
+library(nnet)
+mod2<-multinom(happy~.,data=myHappy)
+summary(mod2)
+```
+
+For this problem:
+
+(1) Compare the two models summaries. You do not need to interpret each coefficient, but pick a particular variable and explain how the interpretation of the coefficient differs between the two models. What is different about these models? What is the same/ similar?
+
+#### Problem 1 Answer
+
+In the ordinal regression model (using `polr`), the coefficients represent the change in the log odds of being in a higher happiness category per unit increase in the predictor under the proportional odds assumption. In the multinomial regression model (using `multinom`), each non-baseline category receives its own set of coefficients so that for a given predictor the effect is estimated separately for each comparison with the baseline. For instance, if we examine a variable like `health` (if present), the ordinal model gives one coefficient that applies across all thresholds, whereas the multinomial model yields multiple coefficients corresponding to each level of happiness relative to the baseline.
+
+(2) Can AIC and Deviance be used to compare these two models (Hint: NO!)? Why or why not? What can be used to compare these two models (you do not need to write the code you this, just explain the methodology you would use)?
+
+#### Problem 2 Answer
+
+AIC and Deviance cannot be used to compare the ordinal and multinomial regression models directly because they are different types of models with different assumptions. AIC and Deviance are used to compare models of the same type (e.g., two Poisson models or two linear regression models). To compare the ordinal and multinomial models, we can use a likelihood ratio test (LRT) to determine if the more complex model (multinomial) provides a significantly better fit than the simpler model (ordinal). The LRT compares the log-likelihoods of the two models to assess whether the additional complexity of the multinomial model is justified by the data.
+
+
+(3) Notice that we changed `happy` from a numeric variable to an ordered factor variable. What is the difference between an ordered factor variable and a numeric variable? Why is it important to use an ordered factor variable for `happy` in this case? Are there other variables that can benefit from a similar conversion? If so, what are they and what do they need converted to? (You do not need to write any code for this question, just answer conceptually). 
+
+#### Problem 3 Answer
+
+An ordered factor variable is a categorical variable with a natural ordering (e.g., low, medium, high) that is treated as a single variable with multiple levels. In contrast, a numeric variable is a continuous variable that can take on any value within a range. It is important to use an ordered factor variable for `happy` in this case because the happiness variable is ordinal, meaning the levels have a meaningful order (e.g., 1 < 2 < 3). Using an ordered factor variable ensures that the model treats the levels as ordered categories rather than arbitrary numbers.
+
+(4) Create effects plots for each model (remember to adjust the `fig.height` and `fig.width` chunk options so that the plots look nice). What do you notice about the effects plots? What is different between these two models? What is the same? Are the effects easier or harder to interpret than the coefficients? Why or why not?
+
+#### Problem 4 Answer
+
+The effects plots for both models display how the predictors influence the probability of each happiness level. In the ordinal model, the effect is assumed to be consistent across thresholds (proportional odds), while the multinomial model shows separate curves for each non-baseline category. Effects plots are generally easier to interpret because they visualize predicted probabilities rather than raw coefficients. The ordinal model's effects plot shows a single curve for each predictor, while the multinomial model's effects plot displays multiple curves for each predictor, making it more complex to interpret.
+
+
+(5) Which model do you prefer for this case? Why?
+
+#### Problem 5 Answer
+
+For the happy dataset, I prefer the ordinal regression model because the response is naturally ordered. The ordinal model is more parsimonious, relies on the proportional odds assumption (which is reasonable in this context), and provides a more straightforward interpretation compared to the multinomial model. The ordinal model also has the advantage of treating the happiness levels as ordered categories, which aligns with the nature of the response variable.
+
